@@ -52,19 +52,21 @@ def dns_verdict(statuses):
 
 def check_dns(hosts, workers=32):
     """{host: verdict} for the hosts the local resolver cannot find. Each of those is asked again over
-    DoH at Cloudflare and Google, for A and AAAA, so a flaky local resolver cannot mark a host dead."""
+    DoH at Cloudflare and Google, for A and AAAA, so a flaky local resolver cannot mark a host dead.
+    A malformed name (an empty or over-long label, e.g. "rpc..example.com") counts as not found locally
+    instead of stopping the whole run."""
     def local_ok(host):
         try:
             socket.getaddrinfo(host, 443)
             return True
-        except OSError:
+        except (OSError, UnicodeError):
             return False
 
     def verdict(host):
         try:
             return dns_verdict([get_json(f"{r}?name={host}&type={t}", headers={"accept": "application/dns-json"})
                                 .get("Status") for r in DOH for t in ("A", "AAAA")])
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             return "unclear"
 
     with cf.ThreadPoolExecutor(workers) as ex:
