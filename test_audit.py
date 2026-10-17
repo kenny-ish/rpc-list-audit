@@ -1,6 +1,8 @@
+import http.client
 import unittest
+from unittest import mock
 
-from audit import classify_response, dns_verdict, endpoints
+from audit import check_dns, classify_response, dns_verdict, endpoints
 
 CHAINLIST = [{"chainId": 1, "name": "Ethereum Mainnet",
               "rpc": [{"url": "https://eth.example", "tracking": "none"}, {"url": "wss://eth.example/ws"}, {"tracking": "none"}]}]
@@ -29,6 +31,18 @@ class DnsVerdict(unittest.TestCase):
     def test_servfail_is_not_evidence(self):
         self.assertEqual(dns_verdict([2, 3, 3, 3]), "unclear")
         self.assertEqual(dns_verdict([]), "unclear")
+
+
+class CheckDns(unittest.TestCase):
+    def test_malformed_hostname_does_not_abort_the_run(self):
+        long_label = "a" * 64 + ".example.com"
+        with mock.patch("audit.get_json", side_effect=OSError):
+            self.assertEqual(check_dns(["rpc..example.com", long_label]),
+                             {"rpc..example.com": "unclear", long_label: "unclear"})
+
+    def test_truncated_doh_reply_is_unclear(self):
+        with mock.patch("audit.get_json", side_effect=http.client.IncompleteRead(b"")):
+            self.assertEqual(check_dns(["no-such-host.invalid"]), {"no-such-host.invalid": "unclear"})
 
 
 class ClassifyResponse(unittest.TestCase):
